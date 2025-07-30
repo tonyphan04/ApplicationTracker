@@ -41,8 +41,8 @@ export const fetchNewApplications = async (): Promise<Application[]> => {
 
   // 4. Extract the messages array (may be empty)
   const messages = res.data.messages || [];
-  // 5. Prepare an array to hold new application entries
-  const newApps: Application[] = [];
+  // 5. Prepare a map to hold the latest application per company
+  const latestApps: Record<string, Application> = {};
 
   // 6. Loop through each message
   for (const msg of messages) {
@@ -57,7 +57,7 @@ export const fetchNewApplications = async (): Promise<Application[]> => {
     });
 
     // 9. (Optional) Log the full message data for debugging
-    console.log('Data:', full.data);
+    // console.log('Data:', full.data);
 
     // 10. Extract headers from the message payload
     const headers = full.data.payload?.headers || [];
@@ -65,25 +65,106 @@ export const fetchNewApplications = async (): Promise<Application[]> => {
     const subject = headers.find(h => h.name === 'Subject')?.value || '';
     const date = headers.find(h => h.name === 'Date')?.value || '';
 
-    // 12. Create an Application object from the message
+    // 12. Extract the plain text or HTML body content
+    let body = '';
+    const getBody = (payload: any): string => {
+      if (!payload) return '';
+      if (payload.parts) {
+        for (const part of payload.parts) {
+          const result = getBody(part);
+          if (result) return result;
+        }
+      }
+      if (payload.body && payload.body.data) {
+        try {
+          return Buffer.from(payload.body.data, 'base64').toString('utf-8');
+        } catch {
+          return '';
+        }
+      }
+      return '';
+    };
+    body = getBody(full.data.payload);
+
+    // 13. Infer status from the email content
+    let status = 'Applied';
+    const content = (subject + ' ' + body).toLowerCase();
+    if (content.includes('interview')) status = 'Interview';
+    else if (content.includes('unfortunately') || content.includes('unsuccessful') || content.includes('regret')) status = 'Rejected';
+    else if (content.includes('assessment')) status = 'Assessment';
+    else if (content.includes('update')) status = 'Update';
+
+
+    // 14. Try to detect company name from subject or content
+    function extractCompanyName(subject: string, body: string): string {
+      // 1. Look for 'at <Company>', 'by <Company>', 'in <Company>', 'to <Company>' in both subject and body
+      const patterns = [
+        /at ([A-Z][a-zA-Z0-9&.\- ]+)/,
+        /by ([A-Z][a-zA-Z0-9&.\- ]+)/,
+        /in ([A-Z][a-zA-Z0-9&.\- ]+)/,
+        /to ([A-Z][a-zA-Z0-9&.\- ]+)/
+      ];
+      for (const pattern of patterns) {
+        let match = subject.match(pattern);
+        if (match && match[1]) return match[1].trim();
+        match = body.match(pattern);
+        if (match && match[1]) return match[1].trim();
+      }
+
+      // 2. Look for capitalized words (likely company names) in both subject and body
+      const capitalizedPattern = /\b([A-Z][a-zA-Z0-9&.\-]+)\b/g;
+      let candidates = [];
+      let m;
+      // Check subject
+      while ((m = capitalizedPattern.exec(subject)) !== null) {
+        if (m[1].toLowerCase() !== 'application' && m[1].toLowerCase() !== 'interview' && m[1].toLowerCase() !== 'offer' && m[1].toLowerCase() !== 'update') {
+          candidates.push(m[1]);
+        }
+      }
+      // Check body
+      capitalizedPattern.lastIndex = 0;
+      while ((m = capitalizedPattern.exec(body)) !== null) {
+        if (m[1].toLowerCase() !== 'application' && m[1].toLowerCase() !== 'interview' && m[1].toLowerCase() !== 'offer' && m[1].toLowerCase() !== 'update') {
+          candidates.push(m[1]);
+        }
+      }
+      if (candidates.length > 0) return candidates[0];
+
+      // 3. Fallback: use first word of subject
+      return subject.split(' ')[0];
+    }
+
+    const company = extractCompanyName(subject, body);
+
+    // 15. Create an Application object from the message
     const app: Application = {
       id: msg.id, // Unique Gmail message ID
-      company: subject.split(' ')[0], // Use first word of subject as company (customize as needed)
+      company, // Improved company name extraction
       title: subject, // Use full subject as title
       appliedDate: new Date(date).toISOString().split('T')[0], // Format date as YYYY-MM-DD
-      status: 'Applied', // Default status
+      status,
     };
 
-    // 13. Add the new application to the array
-    newApps.push(app);
+    // 15. Only keep the latest email per company (by appliedDate)
+    const companyKey = app.company.toLowerCase();
+    if (
+      !latestApps[companyKey] ||
+      new Date(app.appliedDate) > new Date(latestApps[companyKey].appliedDate)
+    ) {
+      latestApps[companyKey] = app;
+    }
   }
 
-  // 14. Combine existing and new applications
-  const updated = [...existing, ...newApps];
-  // 15. Save the updated list to the JSON file
+  // 16. Combine existing and new applications, keeping only the latest per company
+  // Remove any existing entries for companies we just updated
+  const existingFiltered = existing.filter(
+    app => !latestApps[app.company.toLowerCase()]
+  );
+  const updated = [...existingFiltered, ...Object.values(latestApps)];
+  // 17. Save the updated list to the JSON file
   saveApplications(updated);
-  // 16. Log the new applications for review
-  console.log(newApps);
-  // 17. Return the new applications
-  return newApps;
+  // 18. Log the new applications for review
+  console.log(Object.values(latestApps));
+  // 19. Return the new applications
+  return Object.values(latestApps);
 };
