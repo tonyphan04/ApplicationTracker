@@ -9,11 +9,20 @@
   <body>
     <div class="container">
       <h1>Application Tracker</h1>
-      <div id="app-table"></div>
+      <div class="search-bar">
+        <input
+          type="text"
+          class="search-input"
+          placeholder="Search by company or status..."
+        />
+        <button class="search-btn">Search</button>
+        <button class="clear-btn">Clear</button>
+      </div>
+      <div class="app-table"></div>
       <div class="pagination">
-        <button id="prev">Previous</button>
-        <span id="page-info"></span>
-        <button id="next">Next</button>
+        <button class="prev">Previous</button>
+        <span class="page-info"></span>
+        <button class="next">Next</button>
       </div>
     </div>
     <script src="app.js"></script>

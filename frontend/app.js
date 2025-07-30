@@ -1,12 +1,14 @@
 // Fetch and render applications.json with pagination
+
 const PAGE_SIZE = 20;
 let applications = [];
+let filteredApps = [];
 let currentPage = 1;
 
 async function fetchApplications() {
-  // Try to fetch from the backend folder (adjust path if needed)
   const res = await fetch("../backend/applications.json");
   applications = await res.json();
+  filteredApps = applications;
   renderTable();
   renderPagination();
 }
@@ -14,7 +16,7 @@ async function fetchApplications() {
 function renderTable() {
   const start = (currentPage - 1) * PAGE_SIZE;
   const end = start + PAGE_SIZE;
-  const pageData = applications.slice(start, end);
+  const pageData = filteredApps.slice(start, end);
   let html =
     "<table><thead><tr>" +
     "<th>#</th>" +
@@ -33,32 +35,55 @@ function renderTable() {
     </tr>`;
   });
   html += "</tbody></table>";
-  document.getElementById("app-table").innerHTML = html;
+  document.querySelector(".app-table").innerHTML = html;
 }
 
 function renderPagination() {
-  const totalPages = Math.ceil(applications.length / PAGE_SIZE);
-  document.getElementById(
-    "page-info"
+  const totalPages = Math.ceil(filteredApps.length / PAGE_SIZE) || 1;
+  document.querySelector(
+    ".page-info"
   ).textContent = `Page ${currentPage} of ${totalPages}`;
-  document.getElementById("prev").disabled = currentPage === 1;
-  document.getElementById("next").disabled = currentPage === totalPages;
+  document.querySelector(".prev").disabled = currentPage === 1;
+  document.querySelector(".next").disabled = currentPage === totalPages;
 }
 
-document.getElementById("prev").onclick = () => {
+document.querySelector(".prev").onclick = () => {
   if (currentPage > 1) {
     currentPage--;
     renderTable();
     renderPagination();
   }
 };
-document.getElementById("next").onclick = () => {
-  const totalPages = Math.ceil(applications.length / PAGE_SIZE);
+document.querySelector(".next").onclick = () => {
+  const totalPages = Math.ceil(filteredApps.length / PAGE_SIZE) || 1;
   if (currentPage < totalPages) {
     currentPage++;
     renderTable();
     renderPagination();
   }
+};
+
+document.querySelector(".search-btn").onclick = () => {
+  const query = document
+    .querySelector(".search-input")
+    .value.trim()
+    .toLowerCase();
+  filteredApps = applications.filter(
+    (app) =>
+      app.company.toLowerCase().includes(query) ||
+      app.status.toLowerCase().includes(query)
+  );
+  currentPage = 1;
+  renderTable();
+  renderPagination();
+};
+
+document.querySelector(".clear-btn").onclick = () => {
+  document.querySelector(".search-input").value = "";
+  filteredApps = applications;
+  currentPage = 1;
+  renderTable();
+  renderPagination();
 };
 
 fetchApplications();
